@@ -1,37 +1,70 @@
 <?php
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json");
+header("Access-Control-Allow-Methods: POST, GET, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Accept");
 
-// Récupération des données envoyées en JSON
-$data = json_decode(file_get_contents("php://input"), true);
+include 'db.php';
 
-// Vérification des champs requis
-if (!isset($data["product_id"], $data["new_stock"])) {
-    echo json_encode(["success" => false, "message" => "Champs manquants"]);
-    exit;
+// Gérer preflight
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    exit(0);
 }
 
-$product_id = intval($data["product_id"]);
-$new_stock = intval($data["new_stock"]);
+// Récupérer les données
+$productId = null;
+$newStock = null;
 
-// Connexion à la base de données
-$mysqli = new mysqli("localhost", "root", "", "myshop");
-
-if ($mysqli->connect_error) {
-    echo json_encode(["success" => false, "message" => "Erreur de connexion BDD"]);
-    exit;
-}
-
-// Mise à jour du stock
-$stmt = $mysqli->prepare("UPDATE products SET stock = ? WHERE id = ?");
-$stmt->bind_param("ii", $new_stock, $product_id);
-
-if ($stmt->execute()) {
-    echo json_encode(["success" => true, "message" => "Stock mis à jour"]);
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $postData = file_get_contents('php://input');
+    $data = json_decode($postData, true);
+    
+    if ($data) {
+        $productId = $data['product_id'] ?? null;
+        $newStock = $data['new_stock'] ?? null;
+    }
 } else {
-    echo json_encode(["success" => false, "message" => "Erreur lors de la mise à jour"]);
+    // GET pour test
+    $productId = $_GET['product_id'] ?? null;
+    $newStock = $_GET['new_stock'] ?? null;
 }
 
-$stmt->close();
-$mysqli->close();
+// Debug
+error_log("Product ID: " . $productId);
+error_log("New Stock: " . $newStock);
+
+if ($productId === null || $newStock === null) {
+    echo json_encode([
+        'error' => 'ID produit et nouveau stock requis',
+        'received_product_id' => $productId,
+        'received_new_stock' => $newStock
+    ]);
+    exit;
+}
+
+$productId = (int)$productId;
+$newStock = (int)$newStock;
+
+if ($newStock < 0) {
+    echo json_encode(['error' => 'Le stock ne peut pas être négatif']);
+    exit;
+}
+
+try {
+    $stmt = $pdo->prepare("UPDATE produit SET stock = ? WHERE id = ?");
+    $result = $stmt->execute([$newStock, $productId]);
+    
+    if ($result) {
+        echo json_encode([
+            'success' => true,
+            'message' => 'Stock mis à jour avec succès',
+            'product_id' => $productId,
+            'new_stock' => $newStock
+        ]);
+    } else {
+        echo json_encode(['error' => 'Erreur lors de la mise à jour en base']);
+    }
+} catch (Exception $e) {
+    echo json_encode(['error' => 'Erreur: ' . $e->getMessage()]);
+}
 ?>

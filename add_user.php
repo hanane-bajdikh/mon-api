@@ -1,36 +1,57 @@
 <?php
 header("Access-Control-Allow-Origin: *");
-header("Content-Type: application/json; charset=UTF-8");
+header("Content-Type: application/json");
+header("Access-Control-Allow-Methods: POST, GET, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Accept");
 
-$conn = new mysqli("localhost", "root", "", "myshop");
+include 'db.php';
 
-if ($conn->connect_error) {
-    echo json_encode(["success" => false, "message" => "Erreur de connexion."]);
-    exit();
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    exit(0);
 }
 
-$name = $_POST['name'] ?? '';
-$email = $_POST['email'] ?? '';
-$password = $_POST['password'] ?? '';
+// Récupérer les données
+$nom = $_GET['nom'] ?? null;
+$prenom = $_GET['prenom'] ?? null;
+$email = $_GET['email'] ?? null;
+$password = $_GET['password'] ?? null;
 
-if (empty($name) || empty($email) || empty($password)) {
-    echo json_encode(["success" => false, "message" => "Tous les champs sont requis."]);
-    exit();
+if (!$nom || !$prenom || !$email || !$password) {
+    echo json_encode(['error' => 'Tous les champs sont requis']);
+    exit;
 }
 
-// Hash du mot de passe
+// Vérifier si l'email existe déjà
+$stmt = $pdo->prepare("SELECT id FROM utilisateur WHERE email = ?");
+$stmt->execute([$email]);
+if ($stmt->fetch()) {
+    echo json_encode(['error' => 'Cet email est déjà utilisé']);
+    exit;
+}
+
+// Hasher le mot de passe
 $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
 
-$stmt = $conn->prepare("INSERT INTO users (name, email, password) VALUES (?, ?, ?)");
-$stmt->bind_param("sss", $name, $email, $hashedPassword);
+// Insérer le nouvel utilisateur
+$stmt = $pdo->prepare("
+    INSERT INTO utilisateur (nom, prenom, email, mdp, idRole, valider) 
+    VALUES (?, ?, ?, ?, 2, 1)
+");
 
-if ($stmt->execute()) {
-    echo json_encode(["success" => true, "message" => "Utilisateur ajouté."]);
-} else {
-    echo json_encode(["success" => false, "message" => "Erreur lors de l'ajout."]);
+try {
+    $result = $stmt->execute([$nom, $prenom, $email, $hashedPassword]);
+    
+    if ($result) {
+        $userId = $pdo->lastInsertId();
+        echo json_encode([
+            'success' => true,
+            'message' => 'Utilisateur créé avec succès',
+            'user_id' => $userId
+        ]);
+    } else {
+        echo json_encode(['error' => 'Erreur lors de la création']);
+    }
+} catch (Exception $e) {
+    echo json_encode(['error' => 'Erreur: ' . $e->getMessage()]);
 }
-
-$stmt->close();
-$conn->close();
 ?>
- 
